@@ -22,11 +22,19 @@ type PageStatus = 'idle' | 'ordering' | 'pending' | 'paid';
 
 /* ─── page ───────────────────────────────────────────────────────────── */
 export default function CustomerPage() {
-  const [status, setStatus]         = useState<PageStatus>('idle');
-  const [order, setOrder]           = useState<DisplayOrder | null>(null);
-  const [time, setTime]             = useState('');
+  const [status, setStatus]             = useState<PageStatus>('idle');
+  const [order, setOrder]               = useState<DisplayOrder | null>(null);
+  const [time, setTime]                 = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const paidTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Refs so the poll closure always reads the latest values without re-creating the interval
+  const statusRef   = useRef<PageStatus>('idle');
+  const paidTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function updateStatus(s: PageStatus) {
+    statusRef.current = s;
+    setStatus(s);
+  }
 
   /* clock */
   useEffect(() => {
@@ -53,40 +61,53 @@ export default function CustomerPage() {
   /* polling every 2 s */
   useEffect(() => {
     async function poll() {
+      let data: { status: string; order?: DisplayOrder } = { status: 'idle' };
       try {
-        const res  = await fetch('/api/customer/status');
-        const data = await res.json() as { status: string; order?: DisplayOrder };
+        const res = await fetch('/api/customer/status');
+        if (res.ok) data = await res.json();
+      } catch { return; } // network error — skip this tick
 
-        if (data.status === 'paid' && data.order) {
+      const current = statusRef.current;
+
+      if (data.status === 'paid' && data.order) {
+        // Don't restart the paid timer if it's already showing
+        if (current !== 'paid') {
           if (paidTimer.current) clearTimeout(paidTimer.current);
-          setStatus('paid');
+          updateStatus('paid');
           setOrder(data.order);
           paidTimer.current = setTimeout(() => {
-            setStatus('idle');
+            updateStatus('idle');
             setOrder(null);
           }, 5000);
-
-        } else if (data.status === 'pending' && data.order) {
-          setStatus('pending');
-          setOrder(data.order);
-
-        } else if (data.status === 'ordering' && data.order) {
-          // Don't override a "paid" countdown
-          setStatus(prev => prev === 'paid' ? 'paid' : 'ordering');
-          if (status !== 'paid') setOrder(data.order);
-
-        } else {
-          setStatus(prev => prev === 'paid' ? 'paid' : 'idle');
-          if (status !== 'paid') setOrder(null);
         }
-      } catch { /* ignore */ }
+
+      } else if (data.status === 'pending' && data.order) {
+        if (current !== 'paid') {          // don't override the paid countdown
+          updateStatus('pending');
+          setOrder(data.order);
+        }
+
+      } else if (data.status === 'ordering' && data.order) {
+        if (current !== 'paid') {
+          updateStatus('ordering');
+          setOrder(data.order);
+        }
+
+      } else if (data.status === 'idle') {
+        if (current !== 'paid') {
+          updateStatus('idle');
+          setOrder(null);
+        }
+      }
     }
 
-    poll();
+    poll(); // immediate first call
     const id = setInterval(poll, 2000);
-    return () => { clearInterval(id); if (paidTimer.current) clearTimeout(paidTimer.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => {
+      clearInterval(id);
+      if (paidTimer.current) clearTimeout(paidTimer.current);
+    };
+  }, []); // runs once — statusRef keeps it fresh
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col overflow-hidden font-sans">
@@ -103,7 +124,11 @@ export default function CustomerPage() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm tabular-nums text-slate-500">{time}</span>
-          <button onClick={toggleFullscreen} className="p-1.5 rounded-lg text-slate-600 hover:text-slate-400 hover:bg-slate-800 transition-colors">
+          <button
+            onClick={toggleFullscreen}
+            className="p-1.5 rounded-lg text-slate-600 hover:text-slate-400 hover:bg-slate-800 transition-colors"
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          >
             {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
           </button>
         </div>
@@ -111,11 +136,11 @@ export default function CustomerPage() {
 
       {/* Main */}
       <div className="relative z-10 flex-1 flex items-center justify-center p-6">
-        {status === 'idle'                     && <IdleScreen />}
+        {status === 'idle'                              && <IdleScreen />}
         {(status === 'ordering' || status === 'pending') && order && (
           <ActiveOrderScreen order={order} showQr={status === 'pending'} />
         )}
-        {status === 'paid' && order            && <PaidScreen order={order} />}
+        {status === 'paid' && order && <PaidScreen order={order} />}
       </div>
     </div>
   );
@@ -138,34 +163,33 @@ function IdleScreen() {
   );
 }
 
-/* ─── Active order (ordering + pending/QR) ─────────────────────────── */
+/* ─── Active order: ordering + pending/QR ────────────────────────────── */
 function ActiveOrderScreen({ order, showQr }: { order: DisplayOrder; showQr: boolean }) {
-  const subtotal = order.items.reduce((s, i) => s + Number(i.subtotal), 0);
+  const total = order.items.reduce((s, i) => s + Number(i.subtotal), 0);
 
   return (
     <div className="w-full max-w-sm flex flex-col gap-5">
 
-      {/* Order header */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Order</p>
           <p className="text-lg font-bold text-white">{order.order_number}</p>
         </div>
-        {!showQr && (
+        {showQr ? (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
+            <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+            <span className="text-xs font-medium text-indigo-400">Payment ready</span>
+          </div>
+        ) : (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20">
             <Loader2 size={12} className="text-amber-400 animate-spin" />
             <span className="text-xs font-medium text-amber-400">Preparing</span>
           </div>
         )}
-        {showQr && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
-            <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
-            <span className="text-xs font-medium text-indigo-400">Payment ready</span>
-          </div>
-        )}
       </div>
 
-      {/* Items card */}
+      {/* Items */}
       <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl overflow-hidden">
         {order.items.length === 0 ? (
           <div className="px-5 py-6 text-center text-slate-500 text-sm">
@@ -188,18 +212,15 @@ function ActiveOrderScreen({ order, showQr }: { order: DisplayOrder; showQr: boo
             ))}
           </div>
         )}
-
         {/* Total */}
         <div className="flex items-center justify-between px-5 py-4 bg-slate-700/30 border-t border-slate-700/60">
           <span className="text-sm font-semibold text-slate-400">Total</span>
-          <span className="text-2xl font-black text-white">
-            RM {subtotal.toFixed(2)}
-          </span>
+          <span className="text-2xl font-black text-white">RM {total.toFixed(2)}</span>
         </div>
       </div>
 
-      {/* QR — only when cashier has initiated payment */}
-      {showQr && order.bill_url && (
+      {/* QR — only when cashier has clicked Pay and bill is created */}
+      {showQr && order.bill_url ? (
         <div className="flex flex-col items-center gap-4">
           <div className="p-4 bg-white rounded-2xl shadow-2xl shadow-black/50">
             <QRCodeSVG value={order.bill_url} size={200} level="M" includeMargin={false} />
@@ -209,14 +230,11 @@ function ActiveOrderScreen({ order, showQr }: { order: DisplayOrder; showQr: boo
             <p className="text-xs text-slate-500 mt-0.5">DuitNow · FPX · Online Banking</p>
           </div>
         </div>
-      )}
-
-      {/* Waiting hint when no QR yet */}
-      {!showQr && order.items.length > 0 && (
+      ) : !showQr && order.items.length > 0 ? (
         <p className="text-center text-xs text-slate-600">
-          Please wait while your order is being confirmed
+          Please wait while your order is being prepared
         </p>
-      )}
+      ) : null}
     </div>
   );
 }
