@@ -1,17 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getSession, unauthorized } from '@/lib/session';
 
 export async function GET(req: NextRequest) {
   try {
+    const session = await getSession();
+    if (!session) return unauthorized();
+
     const days = Math.min(90, Math.max(1, parseInt(req.nextUrl.searchParams.get('days') ?? '7')));
     const sql = getDb();
-    const rows = await sql`
-      SELECT DATE(created_at AT TIME ZONE 'UTC') AS date, COALESCE(SUM(amount), 0) AS revenue, COUNT(*) AS orders
-      FROM transactions
-      WHERE created_at >= NOW() - (${days} || ' days')::INTERVAL
-      GROUP BY DATE(created_at AT TIME ZONE 'UTC')
-      ORDER BY date ASC
-    `;
+    let rows;
+
+    if (session.role === 'admin') {
+      rows = await sql`
+        SELECT DATE(created_at AT TIME ZONE 'UTC') AS date, COALESCE(SUM(amount), 0) AS revenue, COUNT(*) AS orders
+        FROM transactions
+        WHERE created_at >= NOW() - (${days} || ' days')::INTERVAL
+        GROUP BY DATE(created_at AT TIME ZONE 'UTC')
+        ORDER BY date ASC
+      `;
+    } else {
+      rows = await sql`
+        SELECT DATE(created_at AT TIME ZONE 'UTC') AS date, COALESCE(SUM(amount), 0) AS revenue, COUNT(*) AS orders
+        FROM transactions
+        WHERE created_at >= NOW() - (${days} || ' days')::INTERVAL
+          AND order_id IN (SELECT id FROM orders WHERE vendor_id = ${session.id})
+        GROUP BY DATE(created_at AT TIME ZONE 'UTC')
+        ORDER BY date ASC
+      `;
+    }
+
     const map: Record<string, { revenue: number; orders: number }> = {};
     for (const row of rows) {
       const key = new Date(row.date).toISOString().slice(0, 10);

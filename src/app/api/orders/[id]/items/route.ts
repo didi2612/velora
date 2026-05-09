@@ -1,13 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, recalcOrderTotal } from '@/lib/db';
+import { getSession, unauthorized } from '@/lib/session';
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
+    const session = await getSession();
+    if (!session) return unauthorized();
+
     const { item_id, quantity = 1 } = await req.json();
     if (!item_id) return NextResponse.json({ error: 'item_id is required' }, { status: 400 });
     const sql = getDb();
     const orderId = parseInt(params.id);
     const qty = Math.max(1, parseInt(quantity));
+
+    // Verify order ownership
+    let order;
+    if (session.role === 'admin') {
+      [order] = await sql`SELECT id FROM orders WHERE id = ${orderId}`;
+    } else {
+      [order] = await sql`SELECT id FROM orders WHERE id = ${orderId} AND vendor_id = ${session.id}`;
+    }
+    if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
 
     const [item] = await sql`SELECT * FROM items WHERE id = ${parseInt(item_id)}`;
     if (!item) return NextResponse.json({ error: 'Item not found' }, { status: 404 });

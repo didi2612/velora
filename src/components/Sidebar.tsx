@@ -3,14 +3,19 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, ShoppingCart, Package, BarChart3,
-  Zap, X, ChevronLeft, ChevronRight,
+  Zap, X, ChevronLeft, ChevronRight, Users,
 } from 'lucide-react';
+import type { SessionUser } from '@/lib/auth';
 
-const NAV = [
+const BASE_NAV = [
   { to: '/',             icon: LayoutDashboard, label: 'Dashboard'    },
   { to: '/orders',       icon: ShoppingCart,    label: 'Orders'       },
   { to: '/items',        icon: Package,         label: 'Items'        },
   { to: '/transactions', icon: BarChart3,       label: 'Transactions' },
+];
+
+const ADMIN_NAV = [
+  { to: '/admin/vendors', icon: Users, label: 'Vendors' },
 ];
 
 interface Props {
@@ -18,10 +23,12 @@ interface Props {
   onClose: () => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  user: SessionUser | null;
 }
 
-export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: Props) {
+export default function Sidebar({ open, onClose, collapsed, onToggleCollapse, user }: Props) {
   const pathname = usePathname();
+  const nav = user?.role === 'admin' ? [...BASE_NAV, ...ADMIN_NAV] : BASE_NAV;
 
   return (
     <>
@@ -81,7 +88,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }: 
             </p>
           )}
 
-          {NAV.map(({ to, icon: Icon, label }) => {
+          {nav.map(({ to, icon: Icon, label }) => {
             const isActive = to === '/' ? pathname === '/' : pathname.startsWith(to);
             return (
               <Link

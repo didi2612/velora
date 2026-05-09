@@ -1,12 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, recalcOrderTotal } from '@/lib/db';
+import { getSession, unauthorized } from '@/lib/session';
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string; oiId: string } }) {
   try {
+    const session = await getSession();
+    if (!session) return unauthorized();
+
     const { quantity } = await req.json();
     const qty = Math.max(1, parseInt(quantity));
     const sql = getDb();
     const orderId = parseInt(params.id);
+
+    // Verify order ownership
+    let order;
+    if (session.role === 'admin') {
+      [order] = await sql`SELECT id FROM orders WHERE id = ${orderId}`;
+    } else {
+      [order] = await sql`SELECT id FROM orders WHERE id = ${orderId} AND vendor_id = ${session.id}`;
+    }
+    if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
 
     const [oi] = await sql`SELECT * FROM order_items WHERE id = ${parseInt(params.oiId)} AND order_id = ${orderId}`;
     if (!oi) return NextResponse.json({ error: 'Order item not found' }, { status: 404 });
@@ -22,8 +35,21 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string; oiId: string } }) {
   try {
+    const session = await getSession();
+    if (!session) return unauthorized();
+
     const sql = getDb();
     const orderId = parseInt(params.id);
+
+    // Verify order ownership
+    let order;
+    if (session.role === 'admin') {
+      [order] = await sql`SELECT id FROM orders WHERE id = ${orderId}`;
+    } else {
+      [order] = await sql`SELECT id FROM orders WHERE id = ${orderId} AND vendor_id = ${session.id}`;
+    }
+    if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+
     await sql`DELETE FROM order_items WHERE id = ${parseInt(params.oiId)} AND order_id = ${orderId}`;
     await recalcOrderTotal(sql, orderId);
     return NextResponse.json({ message: 'Item removed' });
