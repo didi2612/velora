@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Zap, CheckCircle, Maximize2, Minimize2, Loader2 } from 'lucide-react';
+import { Zap, CheckCircle, Maximize2, Minimize2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 /* ─── types ──────────────────────────────────────────────────────────── */
@@ -26,17 +26,11 @@ export default function CustomerPage() {
   const [order, setOrder]               = useState<DisplayOrder | null>(null);
   const [time, setTime]                 = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const statusRef = useRef<PageStatus>('idle');
+  const paidTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Refs so the poll closure always reads the latest values without re-creating the interval
-  const statusRef   = useRef<PageStatus>('idle');
-  const paidTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function updateStatus(s: PageStatus) { statusRef.current = s; setStatus(s); }
 
-  function updateStatus(s: PageStatus) {
-    statusRef.current = s;
-    setStatus(s);
-  }
-
-  /* clock */
   useEffect(() => {
     const tick = () => setTime(format(new Date(), 'h:mm a'));
     tick();
@@ -44,7 +38,6 @@ export default function CustomerPage() {
     return () => clearInterval(id);
   }, []);
 
-  /* fullscreen */
   useEffect(() => {
     const onChange = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onChange);
@@ -58,200 +51,299 @@ export default function CustomerPage() {
     } catch { /* ignore */ }
   }
 
-  /* polling every 2 s */
   useEffect(() => {
     async function poll() {
       let data: { status: string; order?: DisplayOrder } = { status: 'idle' };
       try {
         const res = await fetch('/api/customer/status');
         if (res.ok) data = await res.json();
-      } catch { return; } // network error — skip this tick
+      } catch { return; }
 
-      const current = statusRef.current;
+      const cur = statusRef.current;
 
       if (data.status === 'paid' && data.order) {
-        // Don't restart the paid timer if it's already showing
-        if (current !== 'paid') {
+        if (cur !== 'paid') {
           if (paidTimer.current) clearTimeout(paidTimer.current);
           updateStatus('paid');
           setOrder(data.order);
-          paidTimer.current = setTimeout(() => {
-            updateStatus('idle');
-            setOrder(null);
-          }, 5000);
+          paidTimer.current = setTimeout(() => { updateStatus('idle'); setOrder(null); }, 5500);
         }
-
       } else if (data.status === 'pending' && data.order) {
-        if (current !== 'paid') {          // don't override the paid countdown
-          updateStatus('pending');
-          setOrder(data.order);
-        }
-
+        if (cur !== 'paid') { updateStatus('pending'); setOrder(data.order); }
       } else if (data.status === 'ordering' && data.order) {
-        if (current !== 'paid') {
-          updateStatus('ordering');
-          setOrder(data.order);
-        }
-
+        if (cur !== 'paid') { updateStatus('ordering'); setOrder(data.order); }
       } else if (data.status === 'idle') {
-        if (current !== 'paid') {
-          updateStatus('idle');
-          setOrder(null);
-        }
+        if (cur !== 'paid') { updateStatus('idle'); setOrder(null); }
       }
     }
 
-    poll(); // immediate first call
+    poll();
     const id = setInterval(poll, 2000);
-    return () => {
-      clearInterval(id);
-      if (paidTimer.current) clearTimeout(paidTimer.current);
-    };
-  }, []); // runs once — statusRef keeps it fresh
+    return () => { clearInterval(id); if (paidTimer.current) clearTimeout(paidTimer.current); };
+  }, []);
+
+  const isActive = status === 'ordering' || status === 'pending';
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col overflow-hidden font-sans">
-      {/* Ambient glow */}
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_70%_40%_at_50%_-10%,rgba(99,102,241,0.09),transparent)]" />
+    <div className="min-h-screen bg-[#020817] text-white flex flex-col overflow-hidden select-none">
 
-      {/* Top bar */}
-      <div className="relative z-10 flex items-center justify-between px-6 py-4 flex-shrink-0 border-b border-slate-800/60">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <Zap size={13} className="text-white" />
+      {/* ── decorative background blobs ── */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[500px] bg-indigo-600/[0.07] rounded-full blur-3xl" />
+        <div className="absolute -bottom-32 -left-32 w-80 h-80 bg-indigo-800/[0.05] rounded-full blur-3xl" />
+        <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-indigo-800/[0.05] rounded-full blur-3xl" />
+        {status === 'paid' && (
+          <div className="absolute inset-0 bg-emerald-500/[0.04] transition-opacity duration-1000" />
+        )}
+      </div>
+
+      {/* ── top bar ── */}
+      <div className="relative z-10 flex items-center justify-between px-7 py-4 flex-shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-900/50">
+            <Zap size={15} className="text-white" />
           </div>
-          <span className="text-sm font-bold text-slate-300 tracking-wide">Velora</span>
+          <span className="text-sm font-bold text-white/50 tracking-widest uppercase">Velora</span>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm tabular-nums text-slate-500">{time}</span>
+        <div className="flex items-center gap-4">
+          <span className="text-sm tabular-nums text-white/25 font-light tracking-wide">{time}</span>
           <button
             onClick={toggleFullscreen}
-            className="p-1.5 rounded-lg text-slate-600 hover:text-slate-400 hover:bg-slate-800 transition-colors"
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            className="p-1.5 rounded-lg text-white/20 hover:text-white/50 transition-colors"
           >
-            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
         </div>
       </div>
 
-      {/* Main */}
-      <div className="relative z-10 flex-1 flex items-center justify-center p-6">
-        {status === 'idle'                              && <IdleScreen />}
-        {(status === 'ordering' || status === 'pending') && order && (
+      {/* ── main content ── */}
+      <div className="relative z-10 flex-1 flex items-center justify-center px-6 py-4">
+
+        {status === 'idle' && <IdleScreen time={time} />}
+
+        {isActive && order && (
           <ActiveOrderScreen order={order} showQr={status === 'pending'} />
         )}
+
         {status === 'paid' && order && <PaidScreen order={order} />}
       </div>
+
+      {/* ── bottom bar ── */}
+      <div className="relative z-10 flex items-center justify-center pb-5 flex-shrink-0">
+        <p className="text-[11px] text-white/10 tracking-widest uppercase">
+          Powered by Velora
+        </p>
+      </div>
     </div>
   );
 }
 
-/* ─── Idle ────────────────────────────────────────────────────────────── */
-function IdleScreen() {
+/* ══════════════════════════════════════════════════════════════════════
+   IDLE
+══════════════════════════════════════════════════════════════════════ */
+function IdleScreen({ time }: { time: string }) {
   return (
-    <div className="flex flex-col items-center text-center max-w-xs">
-      <div className="w-28 h-28 rounded-3xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center mb-8">
-        <Zap size={52} className="text-indigo-500/50" />
+    <div className="flex flex-col items-center text-center">
+      {/* Large clock */}
+      <p className="text-7xl sm:text-8xl font-extralight tabular-nums text-white/30 tracking-wider mb-14">
+        {time}
+      </p>
+
+      {/* Animated logo */}
+      <div className="relative mb-10">
+        {/* Outer slow pulse ring */}
+        <div className="absolute inset-0 -m-10 rounded-full border border-indigo-500/10 animate-ping [animation-duration:3s]" />
+        {/* Mid ring */}
+        <div className="absolute inset-0 -m-5 rounded-full border border-indigo-500/15" />
+        {/* Inner ring */}
+        <div className="absolute inset-0 -m-2 rounded-full border border-indigo-500/20" />
+        {/* Logo icon */}
+        <div className="relative w-20 h-20 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-3xl flex items-center justify-center shadow-2xl shadow-indigo-600/30">
+          <Zap size={36} className="text-white" />
+        </div>
       </div>
-      <h1 className="text-4xl font-black text-white tracking-tight mb-3">Welcome</h1>
-      <p className="text-slate-500 text-base mb-10">Your order will appear here</p>
-      <div className="flex items-center gap-2.5 px-5 py-3 bg-slate-800/50 border border-slate-700/50 rounded-2xl">
+
+      {/* Brand */}
+      <h1 className="text-5xl sm:text-6xl font-black tracking-[0.18em] text-white/90 mb-3">
+        VELORA
+      </h1>
+      <p className="text-sm text-white/25 tracking-[0.25em] uppercase mb-14">
+        Cashier System
+      </p>
+
+      {/* Status pill */}
+      <div className="flex items-center gap-2.5 px-6 py-3 rounded-full border border-white/[0.06] bg-white/[0.03]">
         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
-        <span className="text-sm text-slate-400">Ready to serve you</span>
+        <span className="text-sm text-white/40 font-medium">Ready to serve you</span>
       </div>
     </div>
   );
 }
 
-/* ─── Active order: ordering + pending/QR ────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════
+   ACTIVE ORDER (ordering + pending/QR)  —  split layout
+══════════════════════════════════════════════════════════════════════ */
 function ActiveOrderScreen({ order, showQr }: { order: DisplayOrder; showQr: boolean }) {
   const total = order.items.reduce((s, i) => s + Number(i.subtotal), 0);
 
   return (
-    <div className="w-full max-w-sm flex flex-col gap-5">
+    <div className="w-full max-w-5xl flex flex-col lg:flex-row gap-5 lg:gap-8">
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Order</p>
-          <p className="text-lg font-bold text-white">{order.order_number}</p>
+      {/* ── left: order summary card ── */}
+      <div className="flex-1 flex flex-col bg-white/[0.03] border border-white/[0.07] rounded-3xl overflow-hidden backdrop-blur-sm">
+
+        {/* Card header */}
+        <div className="px-7 py-5 border-b border-white/[0.06]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-semibold text-white/30 uppercase tracking-[0.2em] mb-1">
+                Your Order
+              </p>
+              <p className="text-lg font-bold text-white/80">{order.order_number}</p>
+            </div>
+            {showQr ? (
+              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs font-semibold text-indigo-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                Payment Ready
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs font-semibold text-amber-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                Preparing
+              </span>
+            )}
+          </div>
         </div>
-        {showQr ? (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
-            <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
-            <span className="text-xs font-medium text-indigo-400">Payment ready</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20">
-            <Loader2 size={12} className="text-amber-400 animate-spin" />
-            <span className="text-xs font-medium text-amber-400">Preparing</span>
-          </div>
-        )}
-      </div>
 
-      {/* Items */}
-      <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl overflow-hidden">
-        {order.items.length === 0 ? (
-          <div className="px-5 py-6 text-center text-slate-500 text-sm">
-            Items will appear as they&apos;re added…
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-700/50 max-h-56 overflow-y-auto">
-            {order.items.map((item, i) => (
-              <div key={i} className="flex items-center justify-between px-5 py-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-6 h-6 rounded-full bg-indigo-600/20 text-indigo-400 text-xs font-bold flex items-center justify-center flex-shrink-0">
-                    {item.quantity}
+        {/* Items list */}
+        <div className="flex-1 overflow-y-auto">
+          {order.items.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-white/20">
+              <p className="text-sm">Items will appear here as they&apos;re added…</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-white/[0.05]">
+              {order.items.map((item, i) => (
+                <div key={i} className="flex items-center justify-between px-7 py-4">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <span className="w-8 h-8 rounded-full bg-indigo-600/20 border border-indigo-500/20 text-indigo-400 text-sm font-bold flex items-center justify-center flex-shrink-0">
+                      {item.quantity}
+                    </span>
+                    <span className="text-base text-white/80 font-medium truncate">{item.item_name}</span>
+                  </div>
+                  <span className="text-base font-semibold text-white/60 ml-4 flex-shrink-0">
+                    RM {Number(item.subtotal).toFixed(2)}
                   </span>
-                  <span className="text-sm text-white truncate">{item.item_name}</span>
                 </div>
-                <span className="text-sm font-medium text-slate-300 ml-3 flex-shrink-0">
-                  RM {Number(item.subtotal).toFixed(2)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-        {/* Total */}
-        <div className="flex items-center justify-between px-5 py-4 bg-slate-700/30 border-t border-slate-700/60">
-          <span className="text-sm font-semibold text-slate-400">Total</span>
-          <span className="text-2xl font-black text-white">RM {total.toFixed(2)}</span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Total row */}
+        <div className="flex items-center justify-between px-7 py-5 border-t border-white/[0.06] bg-white/[0.02]">
+          <span className="text-sm font-semibold text-white/40 uppercase tracking-widest">Total</span>
+          <span className="text-4xl font-black text-white">RM {total.toFixed(2)}</span>
         </div>
       </div>
 
-      {/* QR — only when cashier has clicked Pay and bill is created */}
-      {showQr && order.bill_url ? (
-        <div className="flex flex-col items-center gap-4">
-          <div className="p-4 bg-white rounded-2xl shadow-2xl shadow-black/50">
-            <QRCodeSVG value={order.bill_url} size={200} level="M" includeMargin={false} />
+      {/* ── right: QR or preparing ── */}
+      <div className="lg:w-72 xl:w-80 flex flex-col items-center justify-center">
+
+        {showQr && order.bill_url ? (
+          /* Payment / QR panel */
+          <div className="flex flex-col items-center gap-6 w-full">
+            <div className="text-center">
+              <p className="text-[10px] font-semibold text-white/25 uppercase tracking-[0.2em] mb-2">
+                Amount Due
+              </p>
+              <p className="text-5xl font-black text-white">RM {total.toFixed(2)}</p>
+            </div>
+
+            {/* QR code */}
+            <div className="p-5 bg-white rounded-3xl shadow-2xl shadow-black/60">
+              <QRCodeSVG value={order.bill_url} size={220} level="M" includeMargin={false} />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <p className="text-base font-semibold text-white/80">Scan to pay</p>
+              <div className="flex items-center justify-center gap-2">
+                {['DuitNow', 'FPX', 'Online Banking'].map(m => (
+                  <span key={m} className="px-2.5 py-0.5 rounded-full border border-white/10 text-xs text-white/30">
+                    {m}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
-          <div className="text-center">
-            <p className="text-base font-semibold text-white">Scan to pay</p>
-            <p className="text-xs text-slate-500 mt-0.5">DuitNow · FPX · Online Banking</p>
+
+        ) : (
+          /* Preparing panel */
+          <div className="flex flex-col items-center gap-8 text-center">
+            {/* Spinner */}
+            <div className="relative w-28 h-28">
+              <div className="absolute inset-0 rounded-full border-2 border-white/5" />
+              <div className="absolute inset-0 rounded-full border-2 border-t-indigo-500 border-r-indigo-500/50 border-b-transparent border-l-transparent animate-spin [animation-duration:1.2s]" />
+              <div className="absolute inset-4 rounded-full border border-indigo-500/10" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Zap size={32} className="text-indigo-400/60" />
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xl font-bold text-white/70 mb-2">Order in progress</p>
+              <p className="text-sm text-white/25">Items appear as they&apos;re added</p>
+            </div>
+
+            {/* Animated dots */}
+            <div className="flex gap-2">
+              {[0, 1, 2].map(i => (
+                <span
+                  key={i}
+                  className="w-2 h-2 rounded-full bg-indigo-500/40 animate-bounce"
+                  style={{ animationDelay: `${i * 0.15}s` }}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-      ) : !showQr && order.items.length > 0 ? (
-        <p className="text-center text-xs text-slate-600">
-          Please wait while your order is being prepared
-        </p>
-      ) : null}
+        )}
+      </div>
     </div>
   );
 }
 
-/* ─── Paid ────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════
+   PAID
+══════════════════════════════════════════════════════════════════════ */
 function PaidScreen({ order }: { order: DisplayOrder }) {
   return (
-    <div className="flex flex-col items-center text-center max-w-xs">
-      <div className="w-28 h-28 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-8">
-        <CheckCircle size={56} className="text-emerald-400" />
+    <div className="flex flex-col items-center text-center">
+      {/* Animated checkmark with rings */}
+      <div className="relative mb-10">
+        <div className="absolute inset-0 -m-14 rounded-full border border-emerald-500/10 animate-ping [animation-duration:2s]" />
+        <div className="absolute inset-0 -m-7 rounded-full border border-emerald-500/15" />
+        <div className="absolute inset-0 -m-3 rounded-full border border-emerald-500/20" />
+        <div className="relative w-28 h-28 rounded-full bg-emerald-500/10 flex items-center justify-center">
+          <CheckCircle size={64} className="text-emerald-400" strokeWidth={1.5} />
+        </div>
       </div>
-      <h1 className="text-4xl font-black text-white tracking-tight mb-2">Thank You!</h1>
-      <p className="text-slate-400 text-base mb-5">Payment Successful</p>
-      <p className="text-4xl font-black text-emerald-400 mb-3">
-        RM {Number(order.total).toFixed(2)}
+
+      {/* Text */}
+      <h1 className="text-6xl sm:text-7xl font-black text-white tracking-tight mb-3">
+        Thank You!
+      </h1>
+      <p className="text-lg text-white/30 mb-8 font-light tracking-wide">
+        Payment Successful
       </p>
-      <p className="text-sm text-slate-600">{order.order_number}</p>
+
+      {/* Amount */}
+      <div className="px-10 py-5 rounded-3xl bg-emerald-500/5 border border-emerald-500/10 mb-8">
+        <p className="text-5xl font-black text-emerald-400">
+          RM {Number(order.total).toFixed(2)}
+        </p>
+      </div>
+
+      <p className="text-sm text-white/15 tracking-widest uppercase">{order.order_number}</p>
     </div>
   );
 }
