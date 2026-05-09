@@ -34,6 +34,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     } catch { /* ignore */ }
   }
 
+  // Customer display — no sidebar, no header
+  if (pathname === '/customer') return <>{children}</>;
+
   return (
     <>
       <FullscreenLauncher />

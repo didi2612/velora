@@ -9,6 +9,7 @@ export interface OrderItem {
 export interface Order {
   id: number; order_number: string; status: 'pending' | 'completed' | 'cancelled';
   total: number; notes?: string; items: OrderItem[]; created_at: string; updated_at: string;
+  bill_id?: string | null; bill_url?: string | null; bill_created_at?: string | null;
 }
 export interface Transaction {
   id: number; order_id: number | null; order_number: string; amount: number; created_at: string;
