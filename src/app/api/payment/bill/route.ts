@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
       name:          name?.trim() || 'Customer',
       amount:        amountCents,
       callback_url:  `${APP_URL}/api/payment/callback`,
-      redirect_url:  `${APP_URL}/orders`,
+      redirect_url:  'https://azpgroup.org',
     });
 
     const bill = response.data;
