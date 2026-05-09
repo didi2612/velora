@@ -11,7 +11,7 @@ const PAGE_TITLES: Record<string, string> = {
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen]   = useState(false);
-  const [collapsed, setCollapsed]       = useState(false);
+  const [collapsed, setCollapsed]       = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const pathname = usePathname();
   const title = PAGE_TITLES[pathname] ?? 'Velora';
