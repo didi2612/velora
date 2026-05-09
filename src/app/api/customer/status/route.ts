@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
+import { unstable_noStore as noStore } from 'next/cache';
 import { getDb } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  noStore(); // prevent Next.js Data Cache from serving a stale snapshot
   const sql = getDb();
 
   // ── 1. Any order completed in the last 15 s → "paid" state ───────────────
