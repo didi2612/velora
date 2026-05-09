@@ -1,7 +1,7 @@
-node_modules
+.next/
+node_modules/
 .env
-dist
-.DS_Store
+.env.local
+dist/
 *.log
-server/dist
-client/dist
+.DS_Store
