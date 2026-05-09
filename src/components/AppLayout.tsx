@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, Maximize2, Minimize2, LogOut } from 'lucide-react';
+import { Menu, Maximize2, Minimize2, LogOut, Monitor, Copy, Check } from 'lucide-react';
 import Sidebar from './Sidebar';
 import FullscreenLauncher from './FullscreenLauncher';
 import type { SessionUser } from '@/lib/auth';
@@ -59,6 +59,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const displayName = user?.shopName ?? user?.email ?? '';
   const initials    = displayName ? displayName.charAt(0).toUpperCase() : 'V';
+  const [copied, setCopied] = useState(false);
+
+  function copyCustomerUrl() {
+    if (!user || user.role !== 'vendor') return;
+    const url = `${window.location.origin}/customer/${user.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   return (
     <>
@@ -85,6 +95,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Customer screen link — vendors only */}
+              {user?.role === 'vendor' && (
+                <button
+                  onClick={copyCustomerUrl}
+                  title={`Copy customer screen URL: /customer/${user.id}`}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+                >
+                  {copied ? <Check size={14} className="text-emerald-400" /> : <Monitor size={14} />}
+                  {copied ? 'Copied!' : 'Customer Screen'}
+                </button>
+              )}
+
               {/* Fullscreen toggle */}
               <button
                 onClick={toggleFullscreen}
