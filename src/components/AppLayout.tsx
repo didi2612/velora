@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, Maximize2, Minimize2, LogOut, Monitor, Copy, Check } from 'lucide-react';
+import { Menu, Maximize2, Minimize2, LogOut, Monitor, Check } from 'lucide-react';
 import Sidebar from './Sidebar';
 import FullscreenLauncher from './FullscreenLauncher';
 import type { SessionUser } from '@/lib/auth';
@@ -18,6 +18,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed]       = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [user, setUser]                 = useState<SessionUser | null>(null);
+  const [copied, setCopied]             = useState(false);
   const pathname = usePathname();
   const router   = useRouter();
   const title    = PAGE_TITLES[pathname] ?? 'Velora';
@@ -59,7 +60,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const displayName = user?.shopName ?? user?.email ?? '';
   const initials    = displayName ? displayName.charAt(0).toUpperCase() : 'V';
-  const [copied, setCopied] = useState(false);
 
   function copyCustomerUrl() {
     if (!user || user.role !== 'vendor') return;
